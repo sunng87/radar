@@ -76,10 +76,11 @@
                  :packet (wrap-multibulk args)})))))
 
 (defn- wrap-line [prefix line]
-  (let [size (alength line)
+  (let [size (+ (alength line) 3)
         buffer (ChannelBuffers/buffer size)]
     (.writeByte buffer (int prefix))
     (.writeBytes buffer line)
+    (.writeBytes buffer (to-bytes "\r\n"))
     buffer))
 
 (defn- wrap-bulk [data]
