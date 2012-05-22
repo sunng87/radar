@@ -42,6 +42,6 @@
   (tcp-server port north-gate-handler
               :decoder (redis-request-frame)
               :encoder (redis-response-frame)
-              :threaded true
-              :ordered true))
+              :threaded? true
+              :ordered? true))
 
