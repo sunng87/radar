@@ -6,7 +6,8 @@
 (defn create-south-gate-handler [north-channel-ref]
   (create-handler
    (on-message [ch msg addr]
-               (send @north-channel-ref msg))
+               (send @north-channel-ref msg)
+               (reset! north-channel-ref nil))
    (on-error [ch e]
              (.printStackTrace e))))
 
