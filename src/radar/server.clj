@@ -1,13 +1,32 @@
 (ns radar.server
   (:refer-clojure :exclude [send])
   (:use [link core tcp])
-  (:use [radar codec]))
+  (:use [radar codec])
+  (:import [java.net InetSocketAddress])
+  (:import [org.apache.commons.pool PoolableObjectFactory])
+  (:import [org.apache.commons.pool.impl GenericObjectPool]))
+
+
+(def south-connection-pools (atom {}))
+
+(defn init-session [key]
+  (.borrowObject
+   ^GenericObjectPool (first (vals @south-connection-pools))))
+
+(defn finish-session [session]
+  (let [addr (remote-addr (:south-channel session))
+        addr-key (str (.getHostName ^InetSocketAddress addr)
+                      ":" (.getPort ^InetSocketAddress addr))
+        pool (get @south-connection-pools addr-key)]
+    (.returnObject ^GenericObjectPool pool session)))
 
 (defn create-south-gate-handler [north-channel-ref]
   (create-handler
    (on-message [ch msg addr]
                (send @north-channel-ref msg)
-               (reset! north-channel-ref nil))
+               (reset! north-channel-ref nil)
+               (finish-session {:north-channel north-channel-ref
+                                :south-channel ch}))
    (on-error [ch e]
              (.printStackTrace e))))
 
@@ -19,15 +38,30 @@
                                 :decoder (redis-response-frame))
      :north-channel upstream-channel-ref}))
 
+(defn pool-factory [host port]
+  (reify
+    PoolableObjectFactory
+    (destroyObject [this obj]
+      (close obj))
+    (makeObject [this]
+      (create-south-channel host port))
+    (validateObject [this obj]
+      (valid? obj))
+    (activateObject [this obj]
+      )
+    (passivateObject [this obj]
+      )))
 
-(def client (create-south-channel "127.0.0.1" 6379))
-(defn init-session [key]
-  ;; TODO get south channel from pool
-  client)
+(defn create-south-connection-pool [host port]
+  (GenericObjectPool. (pool-factory host port) 8
+                      GenericObjectPool/WHEN_EXHAUSTED_GROW -1))
 
-;; init an object pool for south channel
-;; TODO
 
+
+(defn add-south-redis [host port]
+  (swap! south-connection-pools assoc
+         (str host ":" port)
+         (create-south-connection-pool host port)))
 
 (def north-gate-handler
   (create-handler
