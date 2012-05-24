@@ -3,8 +3,108 @@
   (:use [clojure.string :only [upper-case]])
   (:import [org.jboss.netty.buffer
             ChannelBuffer
-            ChannelBuffers
-            ChannelBufferInputStream]))
+            ChannelBuffers]))
+
+(def key-aware-cmds
+  #{"APPEND"
+    "BITCOUNT"
+    "BITOP"
+    "BLPOP"
+    "BRPOP"
+    "DEBUG OBJECT"
+    "DECR"
+    "DECRBY"
+    "DEL"
+    "DUMP"
+    "EVAL"
+    "EXISTS"
+    "EXPIRE"
+    "EXPIREAT"
+    "GET"
+    "GETBIT"
+    "GETRANGE"
+    "GETSET"
+    "HDEL"
+    "HEXISTS"
+    "HGET"
+    "HGETALL"
+    "HINCRBY"
+    "HINCRBYFLOAT"
+    "HKEYS"
+    "HLEN"
+    "HMGET"
+    "HMSET"
+    "HSET"
+    "HSETNX"
+    "HVALS"
+    "INCR"
+    "INCRBY"
+    "INCRBYFLOAT"
+    "LINDEX"
+    "LINSERT"
+    "LLEN"
+    "LPOP"
+    "LPUSH"
+    "LPUSHX"
+    "LRANGE"
+    "LREM"
+    "LSET"
+    "LTRIM"
+;;    "MGET"
+    "MIGRATE"
+    "MOVE"
+;;    "MSET"
+;;    "MSETNX"
+    "PERSIST"
+    "PEXPIRE"
+    "PEXPIREAT"
+    "PSETEX"
+    "PTTL"
+    "RENAME"
+    "RENAMENX"
+    "RESTORE"
+    "RPOP"
+    "RPUSH"
+    "RPUSHX"
+    "SADD"
+    "SCARD"
+    "SDIFF"
+    "SDIFFSTORE"
+    "SET"
+    "SETBIT"
+    "SETEX"
+    "SETNX"
+    "SETRANGE"
+    "SINTER"
+    "SINTERSTORE"
+    "SISMEMBER"
+    "SMEMBERS"
+    "SORT"
+    "SPOP"
+    "SRANDMEMBER"
+    "SREM"
+    "STRLEN"
+    "SUNION"
+    "SUNIONSTORE"
+    "TTL"
+    "TYPE"
+    "WATCH"
+    "ZADD"
+    "ZCARD"
+    "ZCOUNT"
+    "ZINCRBY"
+    "ZINTERSTORE"
+    "ZRANGE"
+    "ZRANGEBYSCORE"
+    "ZRANK"
+    "ZREM"
+    "ZREMRANGEBYRANK"
+    "ZREMRANGEBYSCORE"
+    "ZREVRANGE"
+    "ZREVRANGEBYSCORE"
+    "ZREVRANK"
+    "ZSCORE"
+    "ZUNIONSTORE"})
 
 (defn- as-int [s]
   (try
@@ -12,9 +112,9 @@
     (catch NumberFormatException e nil)))
 
 (defn- to-string [^bytes bytes]
-  (String. bytes))
+  (if bytes (String. bytes)))
 (defn- to-bytes [^String s]
-  (.getBytes s))
+  (if s (.getBytes s)))
 
 
 (defmacro dbg [x]
@@ -22,14 +122,32 @@
      (println "dbg:" '~x "=" x#)
      x#))
 
-(defn- read-bulk [^ChannelBufferInputStream ins]
-  (if-let [arg-length (as-int (subs (.readLine ins) 1))]
-    (if (>= (.available ins) arg-length)
-      (let [data (byte-array arg-length)]
-        (.readFully ins data)
-        (.readByte ins) ;;\r
-        (.readByte ins) ;;\n
-        data))))
+(defn safe-readline [^ChannelBuffer buffer]
+  (let [str-buf (StringBuilder.)]
+    (.setLength str-buf 0)
+    (loop []
+      (let [d (if (.readable buffer)
+                (.readByte buffer))]
+        (when-not (or (nil? d) (= 10 d))
+          (.append str-buf (char d))
+          (recur))))
+    (when-not (zero? (.length str-buf))
+      (loop []
+        (when (= (.charAt str-buf (- (.length str-buf) 1)) \return)
+          (.setLength str-buf (- (.length str-buf) 1))
+          (recur)))
+      (.toString str-buf))))
+
+(defn- read-bulk [^ChannelBuffer buffer]
+  (if-let [first-line (safe-readline buffer)]
+    (if-let [arg-length (as-int (subs first-line 1))]
+      (if (>= (.readableBytes buffer) arg-length)
+        (let [data (byte-array arg-length)]
+          (.readBytes buffer data)
+          (.readByte buffer) ;;\r
+          (.readByte buffer) ;;\n
+          data))
+      (println (str "!!!!!!!!!!!!!!!" first-line)))))
 
 (defn- wrap-bulk2 [^ChannelBuffer buffer bulk]
   (.writeBytes buffer
@@ -38,36 +156,33 @@
   (.writeBytes buffer (to-bytes "\r\n"))
   buffer)
 
-(def key-aware-cmds
-  #{"GET"
-    "SET"})
-
 (defn get-multibulk-size [args-bytes]
   (reduce #(+ %1 (count (str (alength %2))) 6 (alength %2))
           (+ 3 (count (str (count args-bytes))))
           args-bytes))
 
 (defn wrap-multibulk [args-bytes]
-  (let [size (get-multibulk-size args-bytes)
-        buffer (ChannelBuffers/buffer size)]
-    (.writeBytes buffer (to-bytes (str "*" (count args-bytes) "\r\n")))
-    (reduce #(wrap-bulk2 %1 %2) buffer args-bytes)
-    buffer))
+  (if args-bytes
+    (let [size (get-multibulk-size args-bytes)
+          buffer (ChannelBuffers/buffer size)]
+      (.writeBytes buffer (to-bytes (str "*" (count args-bytes) "\r\n")))
+      (reduce #(wrap-bulk2 %1 %2) buffer args-bytes)
+      buffer)))
 
-(defn read-multibulk [^ChannelBufferInputStream ins]
-  (let [first-line (.readLine ins)
-        args-count (as-int (subs first-line 1))]
-    (doall (map #(read-bulk %)
-                (take args-count (repeat ins))))))
+(defn read-multibulk [^ChannelBuffer buffer]
+  (if-let [first-line (safe-readline buffer)]
+    (let [args-count (as-int (subs first-line 1))]
+      (if-not (nil? args-count)
+        (doall (map #(read-bulk %)
+                    (take args-count (repeat buffer))))))))
 
 (defcodec redis-request-frame
   (encoder [options ^ChannelBuffer data ^ChannelBuffer buffer]
            (.writeBytes buffer data)
            buffer)
   (decoder [options ^ChannelBuffer buffer]
-           (let [ins (ChannelBufferInputStream. buffer)
-                 args (read-multibulk ins)]
-             (if-not (some nil? args)
+           (let [args (read-multibulk buffer)]
+             (if-not (or (nil? args) (some nil? args))
                (let [cmd (upper-case (to-string (first args)))
                      key (if (contains? key-aware-cmds cmd)
                            (to-string (second args)) )]
@@ -76,29 +191,31 @@
                  :packet (wrap-multibulk args)})))))
 
 (defn- wrap-line [prefix line]
-  (let [size (+ (alength line) 3)
-        buffer (ChannelBuffers/buffer size)]
-    (.writeByte buffer (int prefix))
-    (.writeBytes buffer line)
-    (.writeBytes buffer (to-bytes "\r\n"))
-    buffer))
+  (if line
+    (let [size (+ (alength line) 3)
+          buffer (ChannelBuffers/buffer size)]
+      (.writeByte buffer (int prefix))
+      (.writeBytes buffer line)
+      (.writeBytes buffer (to-bytes "\r\n"))
+      buffer)))
 
 (defn- wrap-bulk [data]
-  (let [size (alength data)
-        buffer (ChannelBuffers/buffer (+ size (count (str size)) 5))]
-    (wrap-bulk2 buffer data)))
+  (if data
+    (let [size (alength data)
+          buffer (ChannelBuffers/buffer (+ size (count (str size)) 5))]
+      (wrap-bulk2 buffer data))))
 
 (defcodec redis-response-frame
   (encoder [options ^ChannelBuffer data ^ChannelBuffer buffer]
            (.writeBytes buffer data)
            buffer)
   (decoder [options ^ChannelBuffer buffer]
-           (let [ins (ChannelBufferInputStream. buffer)
-                 first-byte (.getByte buffer 0)]
+           (let [first-byte (.getByte buffer 0)]
              (case (char first-byte)
-               \+ (wrap-line first-byte (to-bytes (.readLine ins)))
-               \- (wrap-line first-byte (to-bytes (.readLine ins)))
-               \: (wrap-line first-byte (to-bytes (.readLine ins)))
-               \$ (wrap-bulk (read-bulk ins))
-               \* (wrap-multibulk (read-multibulk ins))))))
+               \+ (wrap-line first-byte (to-bytes (safe-readline buffer)))
+               \- (wrap-line first-byte (to-bytes (safe-readline buffer)))
+               \: (wrap-line first-byte (to-bytes (safe-readline buffer)))
+               \$ (wrap-bulk (read-bulk buffer))
+               \* (wrap-multibulk (read-multibulk buffer))
+               nil))))
 
