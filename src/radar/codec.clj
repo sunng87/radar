@@ -165,7 +165,7 @@
       buffer)))
 
 (defn read-multibulk [^ChannelBuffer buffer]
-  (if-let [first-line (dbg (safe-readline buffer))]
+  (if-let [first-line (safe-readline buffer)]
     (let [args-count (as-int (subs first-line 1))]
       ;; return nil on nil
       (loop [result [] i 0]
@@ -194,7 +194,8 @@
           buffer (ChannelBuffers/buffer size)]
       (.writeByte buffer (int prefix))
       (.writeBytes buffer line)
-      (.writeBytes buffer (to-bytes "\r\n"))
+      (.writeByte buffer 13) ;;\r
+      (.writeByte buffer 10) ;;\n
       buffer)))
 
 (defn- wrap-bulk [data]
