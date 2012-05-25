@@ -6,6 +6,15 @@
   (:import [org.apache.commons.pool PoolableObjectFactory])
   (:import [org.apache.commons.pool.impl GenericObjectPool]))
 
+(def tcp-options
+  {"child.reuseAddress" true,
+   "reuseAddress" true,
+   "child.keepAlive" true,
+   "child.connectTimeoutMillis" 100,
+   "tcpNoDelay" true,
+   "readWriteFair" true,
+   "child.tcpNoDelay" true,
+   "receiveBufferSize" (* 64 1024)})
 
 (def south-connection-pools (atom {}))
 
@@ -28,15 +37,16 @@
                (finish-session {:north-channel north-channel-ref
                                 :south-channel ch}))
    (on-error [ch e]
-             (.printStackTrace e))))
+             (.printStackTrace e)
+             (close ch))))
 
 (defn create-south-channel [host port]
-  (let [upstream-channel-ref (atom nil)
-        handler (create-south-gate-handler upstream-channel-ref)]
+  (let [north-channel-ref (atom nil)
+        handler (create-south-gate-handler north-channel-ref)]
     {:south-channel (tcp-client host port handler
                                 :encoder (redis-request-frame)
                                 :decoder (redis-response-frame))
-     :north-channel upstream-channel-ref}))
+     :north-channel north-channel-ref}))
 
 (defn pool-factory [host port]
   (reify
@@ -70,12 +80,14 @@
                  (reset! (:north-channel session) ch)
                  (send (:south-channel session) (:packet msg))))
    (on-error [ch e]
-             (.printStackTrace e))))
+             (.printStackTrace e)
+             (close ch))))
 
 (defn start-server [port]
   (tcp-server port north-gate-handler
               :decoder (redis-request-frame)
               :encoder (redis-response-frame)
               :threaded? true
-              :ordered? true))
+              :ordered? false
+              :tcp-options tcp-options))
 

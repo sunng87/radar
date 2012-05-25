@@ -126,34 +126,29 @@
   (let [str-buf (StringBuilder.)]
     (.setLength str-buf 0)
     (loop []
-      (let [d (if (.readable buffer)
-                (.readByte buffer))]
-        (when-not (or (nil? d) (= 10 d))
+      (if-let [d (if (.readable buffer) (.readByte buffer))]
+        (when-not (or (< d 0) (= 10 d))
           (.append str-buf (char d))
           (recur))))
-    (when-not (zero? (.length str-buf))
-      (loop []
-        (when (= (.charAt str-buf (- (.length str-buf) 1)) \return)
-          (.setLength str-buf (- (.length str-buf) 1))
-          (recur)))
-      (.toString str-buf))))
+    (if (= (.charAt str-buf (dec (.length str-buf))) \return)
+      (subs (.toString str-buf) 0 (- (.length str-buf) 1)))))
 
 (defn- read-bulk [^ChannelBuffer buffer]
   (if-let [first-line (safe-readline buffer)]
-    (if-let [arg-length (as-int (subs first-line 1))]
-      (if (>= (.readableBytes buffer) arg-length)
+    (let [arg-length (as-int (subs first-line 1))]
+      (if (>= (.readableBytes buffer) (+ 2 arg-length))
         (let [data (byte-array arg-length)]
           (.readBytes buffer data)
           (.readByte buffer) ;;\r
           (.readByte buffer) ;;\n
-          data))
-      (println (str "!!!!!!!!!!!!!!!" first-line)))))
+          data)))))
 
 (defn- wrap-bulk2 [^ChannelBuffer buffer bulk]
   (.writeBytes buffer
                (to-bytes (str "$" (alength bulk) "\r\n")))
   (.writeBytes buffer bulk)
-  (.writeBytes buffer (to-bytes "\r\n"))
+  (.writeByte buffer 13) ;;\r
+  (.writeByte buffer 10) ;;\n
   buffer)
 
 (defn get-multibulk-size [args-bytes]
@@ -170,11 +165,14 @@
       buffer)))
 
 (defn read-multibulk [^ChannelBuffer buffer]
-  (if-let [first-line (safe-readline buffer)]
+  (if-let [first-line (dbg (safe-readline buffer))]
     (let [args-count (as-int (subs first-line 1))]
-      (if-not (nil? args-count)
-        (doall (map #(read-bulk %)
-                    (take args-count (repeat buffer))))))))
+      ;; return nil on nil
+      (loop [result [] i 0]
+        (if (= i args-count)
+          result
+          (if-let [r (read-bulk buffer)]
+            (recur (conj result r) (inc i))))))))
 
 (defcodec redis-request-frame
   (encoder [options ^ChannelBuffer data ^ChannelBuffer buffer]
@@ -182,10 +180,10 @@
            buffer)
   (decoder [options ^ChannelBuffer buffer]
            (let [args (read-multibulk buffer)]
-             (if-not (or (nil? args) (some nil? args))
+             (if args
                (let [cmd (upper-case (to-string (first args)))
                      key (if (contains? key-aware-cmds cmd)
-                           (to-string (second args)) )]
+                           (to-string (second args)))]
                 {:cmd cmd
                  :key key
                  :packet (wrap-multibulk args)})))))
