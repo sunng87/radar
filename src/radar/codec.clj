@@ -165,7 +165,7 @@
       buffer)))
 
 (defn read-multibulk [^ChannelBuffer buffer]
-  (if-let [first-line (dbg (safe-readline buffer))]
+  (if-let [first-line (safe-readline buffer)]
     (let [args-count (as-int (subs first-line 1))]
       ;; return nil on nil
       (loop [result [] i 0]
