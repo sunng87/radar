@@ -63,8 +63,8 @@
       )))
 
 (defn create-south-connection-pool [host port]
-  (GenericObjectPool. (pool-factory host port) 8
-                      GenericObjectPool/WHEN_EXHAUSTED_GROW -1))
+  (GenericObjectPool. (pool-factory host port) 50
+                      GenericObjectPool/WHEN_EXHAUSTED_BLOCK -1))
 
 
 
