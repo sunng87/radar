@@ -106,10 +106,8 @@
     "ZSCORE"
     "ZUNIONSTORE"})
 
-(defn- as-int [s]
-  (try
-    (Integer/valueOf s)
-    (catch NumberFormatException e nil)))
+(defn- as-int [^String s]
+  (Integer/valueOf s))
 
 (defn- to-string [^bytes bytes]
   (if bytes (String. bytes)))
@@ -130,11 +128,13 @@
         (when-not (or (< d 0) (= 10 d))
           (.append str-buf (char d))
           (recur))))
-    (if (= (.charAt str-buf (dec (.length str-buf))) \return)
+    (if (and
+         (> (.length str-buf) 0)
+         (= (.charAt str-buf (dec (.length str-buf))) \return))
       (subs (.toString str-buf) 0 (- (.length str-buf) 1)))))
 
 (defn- read-bulk [^ChannelBuffer buffer]
-  (if-let [first-line (safe-readline buffer)]
+  (if-let [first-line  (safe-readline buffer)]
     (let [arg-length (as-int (subs first-line 1))]
       (if (>= (.readableBytes buffer) (+ 2 arg-length))
         (let [data (byte-array arg-length)]
@@ -145,7 +145,7 @@
 
 (defn- wrap-bulk2 [^ChannelBuffer buffer bulk]
   (.writeBytes buffer
-               (to-bytes (str "$" (alength bulk) "\r\n")))
+               ^bytes (to-bytes (str "$" (alength ^bytes bulk) "\r\n")))
   (.writeBytes buffer bulk)
   (.writeByte buffer 13) ;;\r
   (.writeByte buffer 10) ;;\n
@@ -160,12 +160,13 @@
   (if args-bytes
     (let [size (get-multibulk-size args-bytes)
           buffer (ChannelBuffers/buffer size)]
-      (.writeBytes buffer (to-bytes (str "*" (count args-bytes) "\r\n")))
+      (.writeBytes buffer
+                   ^bytes (to-bytes (str "*" (count args-bytes) "\r\n")))
       (reduce #(wrap-bulk2 %1 %2) buffer args-bytes)
       buffer)))
 
 (defn read-multibulk [^ChannelBuffer buffer]
-  (if-let [first-line (safe-readline buffer)]
+  (if-let [first-line  (safe-readline buffer)]
     (let [args-count (as-int (subs first-line 1))]
       ;; return nil on nil
       (loop [result [] i 0]
@@ -190,17 +191,16 @@
 
 (defn- wrap-line [prefix line]
   (if line
-    (let [size (+ (alength line) 3)
+    (let [size (+ (alength ^bytes line) 2)
           buffer (ChannelBuffers/buffer size)]
-      (.writeByte buffer (int prefix))
-      (.writeBytes buffer line)
+      (.writeBytes buffer ^bytes line)
       (.writeByte buffer 13) ;;\r
       (.writeByte buffer 10) ;;\n
       buffer)))
 
 (defn- wrap-bulk [data]
   (if data
-    (let [size (alength data)
+    (let [size (alength ^bytes data)
           buffer (ChannelBuffers/buffer (+ size (count (str size)) 5))]
       (wrap-bulk2 buffer data))))
 
