@@ -1,6 +1,6 @@
 (ns radar.server
   (:refer-clojure :exclude [send])
-  (:use [link core tcp])
+  (:use [link core tcp pool])
   (:use [radar codec])
   (:import [java.net InetSocketAddress])
   (:import [org.apache.commons.pool PoolableObjectFactory])
@@ -16,57 +16,41 @@
    "child.tcpNoDelay" true,
    "receiveBufferSize" (* 64 1024)})
 
-(def south-connection-pools (atom {}))
+(defonce south-connection-pools (atom {}))
 
-(defn init-session [key]
-  (.borrowObject
-   ^GenericObjectPool (first (vals @south-connection-pools))))
+(defonce session-context (atom {}))
+
+(defn init-session [key north-ch]
+  (let [south-ch (borrow (first (vals @south-connection-pools)))]
+    (swap! session-context assoc
+           (channel-addr south-ch) {:north-channel north-ch})
+    {:south-channel south-ch
+     :north-channel north-ch}))
 
 (defn finish-session [session]
-  (let [addr (remote-addr (:south-channel session))
+  (let [south-ch (:south-channel session)
+        addr (remote-addr south-ch)
         addr-key (str (.getHostName ^InetSocketAddress addr)
                       ":" (.getPort ^InetSocketAddress addr))
         pool (get @south-connection-pools addr-key)]
-    (.returnObject ^GenericObjectPool pool session)))
+    (swap! session-context dissoc (channel-addr south-ch))
+    (return pool (:south-channel session))))
 
-(defn create-south-gate-handler [north-channel-ref]
+(def south-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (send @north-channel-ref msg)
-               (reset! north-channel-ref nil)
-               (finish-session {:north-channel north-channel-ref
-                                :south-channel ch}))
+               (let [session (get @session-context (channel-addr ch))]
+                 (send (:north-channel session) msg)
+                 (finish-session {:south-channel ch})))
    (on-error [ch e]
              (.printStackTrace e)
+             (finish-session {:south-channel ch})
              (close ch))))
 
-(defn create-south-channel [host port]
-  (let [north-channel-ref (atom nil)
-        handler (create-south-gate-handler north-channel-ref)]
-    {:south-channel (tcp-client host port handler
-                                :encoder (redis-request-frame)
-                                :decoder (redis-response-frame))
-     :north-channel north-channel-ref}))
-
-(defn pool-factory [host port]
-  (reify
-    PoolableObjectFactory
-    (destroyObject [this obj]
-      (close obj))
-    (makeObject [this]
-      (create-south-channel host port))
-    (validateObject [this obj]
-      (valid? obj))
-    (activateObject [this obj]
-      )
-    (passivateObject [this obj]
-      )))
-
 (defn create-south-connection-pool [host port]
-  (GenericObjectPool. (pool-factory host port) 50
-                      GenericObjectPool/WHEN_EXHAUSTED_BLOCK -1))
-
-
+  (tcp-client-pool host port south-gate-handler
+                   :encoder (redis-request-frame)
+                   :decoder (redis-response-frame)))
 
 (defn add-south-redis [host port]
   (swap! south-connection-pools assoc
@@ -76,8 +60,7 @@
 (def north-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (let [session (init-session (:key msg))]
-                 (reset! (:north-channel session) ch)
+               (let [session (init-session (:key msg) ch)]
                  (send (:south-channel session) (:packet msg))))
    (on-error [ch e]
              (.printStackTrace e)
