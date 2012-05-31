@@ -47,10 +47,16 @@
              (finish-session {:south-channel ch})
              (close ch))))
 
+(def south-connection-factory
+  (tcp-client-factory south-gate-handler
+                      :encoder (redis-request-frame)
+                      :decoder (redis-response-frame)))
+
 (defn create-south-connection-pool [host port]
-  (tcp-client-pool host port south-gate-handler
-                   :encoder (redis-request-frame)
-                   :decoder (redis-response-frame)))
+  (tcp-client-pool south-connection-factory host port 
+                   :pool-options {:max-active 50
+                                  :exhausted-policy :block
+                                  :max-wait -1}))
 
 (defn add-south-redis [host port]
   (swap! south-connection-pools assoc
