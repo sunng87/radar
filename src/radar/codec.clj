@@ -146,13 +146,13 @@
 (defn- wrap-bulk2 [^ChannelBuffer buffer bulk]
   (.writeBytes buffer
                ^bytes (to-bytes (str "$" (alength ^bytes bulk) "\r\n")))
-  (.writeBytes buffer bulk)
+  (.writeBytes buffer ^bytes bulk)
   (.writeByte buffer 13) ;;\r
   (.writeByte buffer 10) ;;\n
   buffer)
 
 (defn get-multibulk-size [args-bytes]
-  (reduce #(+ %1 (count (str (alength %2))) 6 (alength %2))
+  (reduce #(+ %1 (count (str (alength ^bytes %2))) 6 (alength ^bytes %2))
           (+ 3 (count (str (count args-bytes))))
           args-bytes))
 

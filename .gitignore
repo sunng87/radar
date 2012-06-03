@@ -9,4 +9,5 @@ pom.xml
 .lein-failures
 .lein-plugins
 .lein-env
+dump.rdb
 redis.conf

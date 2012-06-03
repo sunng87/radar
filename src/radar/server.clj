@@ -3,6 +3,7 @@
   (:use [link core tcp pool])
   (:use [radar codec])
   (:import [java.net InetSocketAddress])
+  (:import [clojure.lang PersistentQueue])
   (:import [org.apache.commons.pool PoolableObjectFactory])
   (:import [org.apache.commons.pool.impl GenericObjectPool]))
 
@@ -16,58 +17,53 @@
    "child.tcpNoDelay" true,
    "receiveBufferSize" (* 64 1024)})
 
-(defonce south-connection-pools (atom {}))
+(defonce south-connections (atom {}))
 
-(defonce session-context (atom {}))
-
-(defn init-session [key north-ch]
-  (let [south-ch (borrow (first (vals @south-connection-pools)))]
-    (swap! session-context assoc
-           (channel-addr south-ch) {:north-channel north-ch})
-    {:south-channel south-ch
-     :north-channel north-ch}))
-
-(defn finish-session [session]
-  (let [south-ch (:south-channel session)
-        addr (remote-addr south-ch)
-        addr-key (str (.getHostName ^InetSocketAddress addr)
-                      ":" (.getPort ^InetSocketAddress addr))
-        pool (get @south-connection-pools addr-key)]
-    (swap! session-context dissoc (channel-addr south-ch))
-    (return pool (:south-channel session))))
+(defn host:port [^InetSocketAddress addr]
+  (str (.getHostName addr) ":" (.getPort addr)))
 
 (def south-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (let [session (get @session-context (channel-addr ch))]
-                 (send (:north-channel session) msg)
-                 (finish-session {:south-channel ch})))
+               (let [addr (host:port addr)
+                     conn&queue (get @south-connections addr)
+                     queue (:queue conn&queue)
+                     north-conn (peek @queue)]
+                 (send north-conn msg)
+                 (swap! queue pop)))
    (on-error [ch e]
              (.printStackTrace e)
-             (finish-session {:south-channel ch})
-             (close ch))))
+             (let [conn&queue (get @south-connections
+                                   (host:port (remote-addr ch)))
+                   queue (:queue conn&queue)]
+               (swap! queue pop)
+               (close ch)))))
 
 (def south-connection-factory
   (tcp-client-factory south-gate-handler
                       :encoder (redis-request-frame)
                       :decoder (redis-response-frame)))
 
-(defn create-south-connection-pool [host port]
-  (tcp-client-pool south-connection-factory host port 
-                   :pool-options {:max-active 50
-                                  :exhausted-policy :block
-                                  :max-wait -1}))
+(defn create-south-connection [host port]
+  (tcp-client south-connection-factory host port 
+              :lazy-connect true))
 
 (defn add-south-redis [host port]
-  (swap! south-connection-pools assoc
+  (swap! south-connections assoc
          (str host ":" port)
-         (create-south-connection-pool host port)))
+         {:conn (create-south-connection host port)
+          :queue (atom (PersistentQueue/EMPTY))}))
+
+(defn find-south-conn [msg]
+  ;;TODO
+  (first (vals @south-connections)))
 
 (def north-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (let [session (init-session (:key msg) ch)]
-                 (send (:south-channel session) (:packet msg))))
+               (let [{conn :conn queue :queue} (find-south-conn msg)]
+                 (swap! queue conj ch)
+                 (send conn (:packet msg))))
    (on-error [ch e]
              (.printStackTrace e)
              (close ch))))
@@ -76,7 +72,5 @@
   (tcp-server port north-gate-handler
               :decoder (redis-request-frame)
               :encoder (redis-response-frame)
-              :threaded? true
-              :ordered? false
               :tcp-options tcp-options))
 
