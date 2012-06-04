@@ -1,11 +1,11 @@
 (ns radar.server
   (:refer-clojure :exclude [send])
+  (:use [clojure.string :only [split]])  
   (:use [link core tcp pool])
   (:use [radar codec])
+  (:use [radar.config :only [conf]])
   (:import [java.net InetSocketAddress])
-  (:import [clojure.lang PersistentQueue])
-  (:import [org.apache.commons.pool PoolableObjectFactory])
-  (:import [org.apache.commons.pool.impl GenericObjectPool]))
+  (:import [clojure.lang PersistentQueue]))
 
 (def tcp-options
   {"child.reuseAddress" true,
@@ -21,6 +21,13 @@
 
 (defn host:port [^InetSocketAddress addr]
   (str (.getHostName addr) ":" (.getPort addr)))
+
+(defn host-port [host:port]
+  (let [vs (split host:port #":")
+        host (first vs)
+        port (Integer/valueOf ^String (second vs))]
+    [host port]))
+
 
 (def south-gate-handler
   (create-handler
@@ -48,20 +55,24 @@
   (tcp-client south-connection-factory host port 
               :lazy-connect true))
 
-(defn add-south-redis [host port]
-  (swap! south-connections assoc
-         (str host ":" port)
-         {:conn (create-south-connection host port)
-          :queue (atom (PersistentQueue/EMPTY))}))
+(defn add-south-redis [addr-str]
+  (let [[host port] (host-port addr-str)]
+    (swap! south-connections assoc
+           addr-str
+           {:conn (create-south-connection host port)
+            :queue (atom (PersistentQueue/EMPTY))})))
 
 (defn find-south-conn [msg]
-  ;;TODO
-  (first (vals @south-connections)))
+  (let [{cmd :cmd key :key} msg
+        node ((:grouping @conf) cmd key)
+        instances (get (:groups @conf) node)]
+    (map #(get @south-connections %) instances)))
 
 (def north-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (let [{conn :conn queue :queue} (find-south-conn msg)]
+               (let [{conn :conn queue :queue}
+                     (first (find-south-conn msg))]
                  (swap! queue conj ch)
                  (send conn (:packet msg))))
    (on-error [ch e]

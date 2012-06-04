@@ -14,6 +14,8 @@
                                (nth  parts (mod (hash key) (count parts))))))]
     (is (= 2 (count (:groups config))))
     (is (= [:s1 :s2] (keys (:groups config))))
+    (is (= (list "192.168.1.101:6379" "192.168.1.103:6379")
+           (:s1 (:groups config))))
     (is (fn? (:grouping config)))
     (is (contains? #{:s1 :s2} ((:grouping config) "get" "900913")))))
 

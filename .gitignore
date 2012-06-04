@@ -11,3 +11,4 @@ pom.xml
 .lein-env
 dump.rdb
 redis.conf
+config.my.clj
