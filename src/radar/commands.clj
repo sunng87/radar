@@ -1,6 +1,7 @@
-(ns radar.commands)
+(ns radar.commands
+  (:use [radar util]))
 
-;; properties for commands
+;; spec for commands
 ;; :rw [:r|:w] read or write
 ;; :supported [true|false] is supported by radar
 ;; :key [:one|:zero|:all] how many keys contains in it
@@ -12,7 +13,7 @@
    "BGREWRITEAOF" {:rw :w :key :zero},
    "BGSAVE" {:rw :w :key :zero},
    "BITCOUNT" {},
-   "BITOP" {:supported false},;;TODO
+   "BITOP" {:supported false}, ;;TODO
    "BLPOP" {:rw :w},
    "BRPOP" {:rw :w},
    "BRPOPLPUSH" {:supported false},
@@ -148,4 +149,29 @@
    "ZREVRANK" {},
    "ZSCORE" {},
    "ZUNIONSTORE" {:supported false}})
+
+(def supported-redis-commands
+  (into {}
+        (filter #(get (val %) :supported true) redis-commands)))
+
+(defn get-key-spec [args cmd-spec]
+  (let [key-spec (get cmd-spec :key :one)]
+    (case key-spec
+      :one (vector (to-string (second args)))
+      :all (doall (map to-string (rest args)))
+      :zero (vector))))
+
+(defn get-rw-spec [cmd-spec]
+  (get cmd-spec :rw :r))
+
+(defn get-pass-proxy-spec [cmd-spec]
+  (get cmd-spec :pass-proxy false))
+
+(defn get-spec [args]
+  (let [cmd-name (to-string (first args))]
+    (if-let [cmd-spec (get supported-redis-commands cmd-name)]
+      {:cmd cmd-name
+       :key (get-key-spec args cmd-spec)
+       :rw (get-rw-spec cmd-spec)
+       :pass-proxy (get-pass-proxy-spec cmd-spec)})))
 

@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [send])
   (:use [clojure.string :only [split]])  
   (:use [link core tcp pool])
-  (:use [radar codec])
+  (:use [radar codec commands])
   (:use [radar.config :only [conf]])
   (:import [java.net InetSocketAddress])
   (:import [clojure.lang PersistentQueue]))
@@ -62,19 +62,25 @@
            {:conn (create-south-connection host port)
             :queue (atom (PersistentQueue/EMPTY))})))
 
-(defn find-south-conn [msg]
-  (let [{cmd :cmd key :key} msg
-        node ((:grouping @conf) cmd key)
-        instances (get (:groups @conf) node)]
+;;TODO rw policy
+(defn find-south-conn [cmd-info]
+  (let [{cmd :cmd keys :key} cmd-info
+        nodes (map #((:grouping @conf) cmd %) keys)
+        ;; do not use mapcat here
+        instances (mapcat (get (:groups @conf) %) nodes)]
     (map #(get @south-connections %) instances)))
 
 (def north-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (let [{conn :conn queue :queue}
-                     (first (find-south-conn msg))]
-                 (swap! queue conj ch)
-                 (send conn (:packet msg))))
+               (let [{packet :packet data :data} msg
+                     cmd-info (get-spec data)]
+                 (if-not (:pass-proxy cmd-info)
+                   ;; TODO for proxy commands
+                   (let [{conn :conn queue :queue}
+                         (first (find-south-conn cmd-info))]
+                     (swap! queue conj ch)
+                     (send conn (:packet msg))))))
    (on-error [ch e]
              (.printStackTrace e)
              (close ch))))

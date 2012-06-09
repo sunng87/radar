@@ -1,124 +1,11 @@
 (ns radar.codec
+  (:use [radar commands util])
   (:use [link.codec :only [defcodec encoder decoder]])
   (:use [clojure.string :only [upper-case]])
   (:import [org.jboss.netty.buffer
             ChannelBuffer
             ChannelBuffers]))
 
-(def key-aware-cmds
-  #{"APPEND"
-    "BITCOUNT"
-    "BITOP"
-    "BLPOP"
-    "BRPOP"
-    "DEBUG OBJECT"
-    "DECR"
-    "DECRBY"
-    "DEL"
-    "DUMP"
-    "EVAL"
-    "EXISTS"
-    "EXPIRE"
-    "EXPIREAT"
-    "GET"
-    "GETBIT"
-    "GETRANGE"
-    "GETSET"
-    "HDEL"
-    "HEXISTS"
-    "HGET"
-    "HGETALL"
-    "HINCRBY"
-    "HINCRBYFLOAT"
-    "HKEYS"
-    "HLEN"
-    "HMGET"
-    "HMSET"
-    "HSET"
-    "HSETNX"
-    "HVALS"
-    "INCR"
-    "INCRBY"
-    "INCRBYFLOAT"
-    "LINDEX"
-    "LINSERT"
-    "LLEN"
-    "LPOP"
-    "LPUSH"
-    "LPUSHX"
-    "LRANGE"
-    "LREM"
-    "LSET"
-    "LTRIM"
-;;    "MGET"
-    "MIGRATE"
-    "MOVE"
-;;    "MSET"
-;;    "MSETNX"
-    "PERSIST"
-    "PEXPIRE"
-    "PEXPIREAT"
-    "PSETEX"
-    "PTTL"
-    "RENAME"
-    "RENAMENX"
-    "RESTORE"
-    "RPOP"
-    "RPUSH"
-    "RPUSHX"
-    "SADD"
-    "SCARD"
-    "SDIFF"
-    "SDIFFSTORE"
-    "SET"
-    "SETBIT"
-    "SETEX"
-    "SETNX"
-    "SETRANGE"
-    "SINTER"
-    "SINTERSTORE"
-    "SISMEMBER"
-    "SMEMBERS"
-    "SORT"
-    "SPOP"
-    "SRANDMEMBER"
-    "SREM"
-    "STRLEN"
-    "SUNION"
-    "SUNIONSTORE"
-    "TTL"
-    "TYPE"
-    "WATCH"
-    "ZADD"
-    "ZCARD"
-    "ZCOUNT"
-    "ZINCRBY"
-    "ZINTERSTORE"
-    "ZRANGE"
-    "ZRANGEBYSCORE"
-    "ZRANK"
-    "ZREM"
-    "ZREMRANGEBYRANK"
-    "ZREMRANGEBYSCORE"
-    "ZREVRANGE"
-    "ZREVRANGEBYSCORE"
-    "ZREVRANK"
-    "ZSCORE"
-    "ZUNIONSTORE"})
-
-(defn- as-int [^String s]
-  (Integer/valueOf s))
-
-(defn- to-string [^bytes bytes]
-  (if bytes (String. bytes)))
-(defn- to-bytes [^String s]
-  (if s (.getBytes s)))
-
-
-(defmacro dbg [x]
-  `(let [x# ~x]
-     (println "dbg:" '~x "=" x#)
-     x#))
 
 (defn safe-readline [^ChannelBuffer buffer]
   (let [str-buf (StringBuilder.)]
@@ -180,14 +67,9 @@
            (.writeBytes buffer data)
            buffer)
   (decoder [options ^ChannelBuffer buffer]
-           (let [args (read-multibulk buffer)]
-             (if args
-               (let [cmd (upper-case (to-string (first args)))
-                     key (if (contains? key-aware-cmds cmd)
-                           (to-string (second args)))]
-                {:cmd cmd
-                 :key key
-                 :packet (wrap-multibulk args)})))))
+           (if-let [args (read-multibulk buffer)]
+             {:data args
+              :packet (wrap-multibulk args)})))
 
 (defn- wrap-line [prefix line]
   (if line
