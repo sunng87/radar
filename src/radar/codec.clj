@@ -23,12 +23,16 @@
 (defn- read-bulk [^ChannelBuffer buffer]
   (if-let [first-line  (safe-readline buffer)]
     (let [arg-length (as-int (subs first-line 1))]
-      (if (>= (.readableBytes buffer) (+ 2 arg-length))
-        (let [data (byte-array arg-length)]
-          (.readBytes buffer data)
-          (.readByte buffer) ;;\r
-          (.readByte buffer) ;;\n
-          data)))))
+      (if (= arg-length -1)
+        ;; maybe we need a better way for this situation, it only
+        ;; happens when the server returns msg for key-not-found.
+        :not-found 
+        (if (>= (.readableBytes buffer) (+ 2 arg-length))
+          (let [data (byte-array arg-length)]
+            (.readBytes buffer data)
+            (.readByte buffer) ;;\r
+            (.readByte buffer) ;;\n
+            data))))))
 
 (defn- wrap-bulk2 [^ChannelBuffer buffer bulk]
   (.writeBytes buffer
@@ -82,9 +86,11 @@
 
 (defn- wrap-bulk [data]
   (if data
-    (let [size (alength ^bytes data)
-          buffer (ChannelBuffers/buffer (+ size (count (str size)) 5))]
-      (wrap-bulk2 buffer data))))
+    (if (= data :not-found)
+      (ChannelBuffers/wrappedBuffer (to-bytes "$-1\r\n"))
+      (let [size (alength ^bytes data)
+            buffer (ChannelBuffers/buffer (+ size (count (str size)) 5))]
+        (wrap-bulk2 buffer data)))))
 
 (defcodec redis-response-frame
   (encoder [options ^ChannelBuffer data ^ChannelBuffer buffer]
