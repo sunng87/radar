@@ -1,5 +1,6 @@
 (ns radar.commands
-  (:use [radar util]))
+  (:use [radar util])
+  (:use [clojure.string :only [upper-case]]))
 
 ;; spec for commands
 ;; :rw [:r|:w] read or write
@@ -168,7 +169,7 @@
   (get cmd-spec :pass-proxy false))
 
 (defn get-spec [args]
-  (let [cmd-name (to-string (first args))]
+  (let [cmd-name (upper-case (to-string (first args)))]
     (if-let [cmd-spec (get supported-redis-commands cmd-name)]
       {:cmd cmd-name
        :key (get-key-spec args cmd-spec)

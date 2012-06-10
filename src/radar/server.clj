@@ -43,6 +43,7 @@
              (let [conn&queue (get @south-connections
                                    (host:port (remote-addr ch)))
                    queue (:queue conn&queue)]
+               ;; FIXME we don't always have to pop here
                (swap! queue pop)
                (close ch)))))
 
@@ -62,25 +63,30 @@
            {:conn (create-south-connection host port)
             :queue (atom (PersistentQueue/EMPTY))})))
 
-;;TODO rw policy
 (defn find-south-conn [cmd-info]
-  (let [{cmd :cmd keys :key} cmd-info
-        nodes (map #((:grouping @conf) cmd %) keys)
+  (let [{cmd :cmd keys :key rw :rw} cmd-info
+        ;; currently radar doesn't support command with multiple keys
+        group ((:grouping @conf) cmd (first keys))
         ;; do not use mapcat here
-        instances (mapcat (get (:groups @conf) %) nodes)]
-    (map #(get @south-connections %) instances)))
+        instances (get (:groups @conf) group)]
+    (case rw
+      :w (map #(get @south-connections %) instances)
+      :r [(get @south-connections (rand-nth instances))])))
 
 (def north-gate-handler
   (create-handler
    (on-message [ch msg addr]
-               (let [{packet :packet data :data} msg
-                     cmd-info (get-spec data)]
-                 (if-not (:pass-proxy cmd-info)
-                   ;; TODO for proxy commands
-                   (let [{conn :conn queue :queue}
-                         (first (find-south-conn cmd-info))]
-                     (swap! queue conj ch)
-                     (send conn (:packet msg))))))
+               (let [{packet :packet data :data} msg]
+                 (if-let [cmd-info (get-spec data)]
+                   (if-not (:pass-proxy cmd-info)
+                     ;; TODO for proxy commands
+                     (doseq [{conn :conn queue :queue}
+                             (find-south-conn cmd-info)]
+                       (swap! queue conj ch)
+                       (send conn packet)))
+                   (do
+                     ;;TODO supported function
+                     ))))
    (on-error [ch e]
              (.printStackTrace e)
              (close ch))))
