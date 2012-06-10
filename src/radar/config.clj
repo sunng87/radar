@@ -1,9 +1,13 @@
-(ns radar.config)
+(ns radar.config
+  (:use [radar util]))
 
 ;; a set of macro to config south nodes for radar
 ;;
 ;;
 
+
+(defn listen-port [port]
+  {:port port})
 
 (defmacro grouping-fn [args & body]
   `{:grouping (fn ~args ~@body)})

@@ -12,9 +12,8 @@
   (into #{} (apply concat (vals (:groups conf)))))
 
 (defn -main [config-file & args]
-  (let [config (load-config config-file)]
-    (reset! conf config)
-    (doseq [s (all-servers config)]
-      (add-south-redis s)))
-  (start-server 9099)
+  (reset! conf (load-config config-file))
+  (doseq [s (all-servers @conf)]
+    (add-south-redis s))
+  (start-server (get @conf :port 9099))
   (println "radar service ready."))
