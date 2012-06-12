@@ -77,16 +77,13 @@
   (create-handler
    (on-message [ch msg addr]
                (let [{packet :packet data :data} msg]
-                 (if-let [cmd-info (get-spec data)]
+                 (when-let [cmd-info (get-spec data)]
                    (if-not (:pass-proxy cmd-info)
-                     ;; TODO for proxy commands
                      (doseq [{conn :conn queue :queue}
                              (find-south-conn cmd-info)]
                        (swap! queue conj ch)
-                       (send conn packet)))
-                   (do
-                     ;;TODO supported function
-                     ))))
+                       (send conn packet))
+                     (send ch ((:pass-proxy cmd-info) data))))))
    (on-error [ch e]
              (.printStackTrace e)
              (close ch))))

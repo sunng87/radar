@@ -81,7 +81,7 @@
    "PERSIST" {:rw :w},
    "PEXPIRE" {:rw :w},
    "PEXPIREAT" {:rw :w},
-   "PING" {:pass-proxy true},
+   "PING" {:pass-proxy (fn [d] (to-buffer "+PONG\r\n"))},
    "PSETEX" {:rw :w},
    "PSUBSCRIBE" {:supported false},
    "PTTL" {},
