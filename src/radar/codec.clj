@@ -49,22 +49,26 @@
 
 (defn wrap-multibulk [args-bytes]
   (if args-bytes
-    (let [size (get-multibulk-size args-bytes)
-          buffer (ChannelBuffers/buffer size)]
-      (.writeBytes buffer
-                   ^bytes (to-bytes (str "*" (count args-bytes) "\r\n")))
-      (reduce #(wrap-bulk2 %1 %2) buffer args-bytes)
-      buffer)))
+    (case args-bytes
+      :ping-inline (to-buffer "PING\r\n")
+      (let [size (get-multibulk-size args-bytes)
+            buffer (ChannelBuffers/buffer size)]
+        (.writeBytes buffer
+                     ^bytes (to-bytes (str "*" (count args-bytes) "\r\n")))
+        (reduce #(wrap-bulk2 %1 %2) buffer args-bytes)
+        buffer))))
 
 (defn read-multibulk [^ChannelBuffer buffer]
   (if-let [first-line  (safe-readline buffer)]
-    (let [args-count (as-int (subs first-line 1))]
-      ;; return nil on nil
-      (loop [result [] i 0]
-        (if (= i args-count)
-          result
-          (if-let [r (read-bulk buffer)]
-            (recur (conj result r) (inc i))))))))
+    (case (upper-case first-line)
+      "PING" :ping-inline
+      (let [args-count (as-int (subs first-line 1))]
+       ;; return nil on nil
+       (loop [result [] i 0]
+         (if (= i args-count)
+           result
+           (if-let [r (read-bulk buffer)]
+             (recur (conj result r) (inc i)))))))))
 
 (defcodec redis-request-frame
   (encoder [options ^ChannelBuffer data ^ChannelBuffer buffer]
@@ -72,7 +76,9 @@
            buffer)
   (decoder [options ^ChannelBuffer buffer]
            (if-let [args (read-multibulk buffer)]
-             {:data args
+             {:data (case args
+                      :ping-inline [(to-bytes "PING")]
+                      args)
               :packet (wrap-multibulk args)})))
 
 (defn- wrap-line [prefix line]
