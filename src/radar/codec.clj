@@ -1,5 +1,5 @@
 (ns radar.codec
-  (:use [radar commands util])
+  (:use [radar util])
   (:use [link.codec :only [defcodec encoder decoder]])
   (:use [clojure.string :only [upper-case]])
   (:import [org.jboss.netty.buffer

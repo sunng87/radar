@@ -1,5 +1,5 @@
 (ns radar.commands
-  (:use [radar util])
+  (:use [radar util codec])
   (:use [clojure.string :only [upper-case]]))
 
 ;; spec for commands
@@ -128,7 +128,12 @@
    "SUNION" {:supported false},
    "SUNIONSTORE" {:supported false},
    "SYNC" {:supported false},
-   "TIME" {:pass-proxy true},
+   "TIME" {:pass-proxy
+           (fn [args]
+             (let [time (System/currentTimeMillis)
+                   seconds (str (/ time 1000))
+                   microseconds (str (- time (* 1000 seconds)))]
+               (wrap-multibulk (map to-bytes [seconds microseconds]))))},
    "TTL" {},
    "TYPE" {},
    "UNSUBSCRIBE" {:supported false},
