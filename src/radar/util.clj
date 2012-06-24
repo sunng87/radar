@@ -9,7 +9,7 @@
 (defn to-bytes [^String s]
   (if s (.getBytes s)))
 (defn to-buffer [^String s]
-  (ChannelBuffers/wrappedBuffer (to-bytes s)))
+  (ChannelBuffers/wrappedBuffer ^bytes (to-bytes s)))
 
 
 (defmacro dbg [x]

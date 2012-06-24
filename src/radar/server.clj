@@ -77,13 +77,19 @@
   (create-handler
    (on-message [ch msg addr]
                (let [{packet :packet data :data} msg]
-                 (when-let [cmd-info (get-spec data)]
-                   (if-not (:pass-proxy cmd-info)
-                     (doseq [{conn :conn queue :queue}
-                             (find-south-conn cmd-info)]
-                       (swap! queue conj ch)
-                       (send conn packet))
-                     (send ch ((:pass-proxy cmd-info) data))))))
+                 (if-let [cmd-info (get-spec data)]
+                   (cond
+                    ;; pass command, won't talk with south conns
+                    (:pass-proxy cmd-info)
+                    (send ch ((:pass-proxy cmd-info) data))
+                    
+                    :else
+                    (doseq [{conn :conn q :queue} (find-south-conn cmd-info)]
+                      (swap! q conj ch)
+                      (send conn packet)))
+                   (send ch (error-reply
+                             "ERR: unknown or unsupported command.")))))
+
    (on-error [ch e]
              (.printStackTrace e)
              (close ch))))

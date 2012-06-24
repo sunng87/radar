@@ -6,11 +6,11 @@
 ;; :rw [:r|:w] read or write
 ;; :supported [true|false] is supported by radar
 ;; :key [:one|:zero|:all] how many keys contains in it
-;; :pass-proxy [true|false] response made by radar
+;; :pass-proxy [fn] response made by radar
 
 (def redis-commands
   {"APPEND" {:rw :w},
-   "AUTH" {:pass-proxy false :key :zero},
+   "AUTH" {:supported false},
    "BGREWRITEAOF" {:rw :w :key :zero},
    "BGSAVE" {:rw :w :key :zero},
    "BITCOUNT" {},

@@ -93,7 +93,7 @@
 (defn- wrap-bulk [data]
   (if data
     (if (= data :not-found)
-      (ChannelBuffers/wrappedBuffer (to-bytes "$-1\r\n"))
+      (ChannelBuffers/wrappedBuffer ^bytes (to-bytes "$-1\r\n"))
       (let [size (alength ^bytes data)
             buffer (ChannelBuffers/buffer (+ size (count (str size)) 5))]
         (wrap-bulk2 buffer data)))))
@@ -111,4 +111,7 @@
                \$ (wrap-bulk (read-bulk buffer))
                \* (wrap-multibulk (read-multibulk buffer))
                nil))))
+
+(defn error-reply [msg]
+  (to-buffer (str "-" msg)))
 
