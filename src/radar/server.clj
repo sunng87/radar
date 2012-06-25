@@ -28,7 +28,6 @@
         port (Integer/valueOf ^String (second vs))]
     [host port]))
 
-
 (def south-gate-handler
   (create-handler
    (on-message [ch msg addr]
@@ -43,9 +42,12 @@
              (let [conn&queue (get @south-connections
                                    (host:port (remote-addr ch)))
                    queue (:queue conn&queue)]
-               ;; FIXME we don't always have to pop here
-               (swap! queue pop)
-               (close ch)))))
+               (doseq [nch @queue]
+                 (send nch (error-reply "ERR: connection broken.")))
+               (reset! queue (PersistentQueue/EMPTY))
+               (close ch)
+               ;;TODO notify failure detector and failback
+               ))))
 
 (def south-connection-factory
   (tcp-client-factory south-gate-handler
