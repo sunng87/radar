@@ -1,7 +1,7 @@
 (ns radar.server
   (:refer-clojure :exclude [send])
-  (:use [clojure.string :only [split]])  
-  (:use [link core tcp pool])
+  (:use [clojure.string :only [split]])
+  (:use [link core tcp])
   (:use [radar codec commands])
   (:use [radar.config :only [conf]])
   (:import [java.net InetSocketAddress])
@@ -55,7 +55,7 @@
                       :decoder (redis-response-frame)))
 
 (defn create-south-connection [host port]
-  (tcp-client south-connection-factory host port 
+  (tcp-client south-connection-factory host port
               :lazy-connect true))
 
 (defn add-south-redis [addr-str]
@@ -84,7 +84,7 @@
                     ;; pass command, won't talk with south conns
                     (:pass-proxy cmd-info)
                     (send ch ((:pass-proxy cmd-info) data))
-                    
+
                     :else
                     (doseq [{conn :conn q :queue} (find-south-conn cmd-info)]
                       (swap! q conj ch)
@@ -101,4 +101,3 @@
               :decoder (redis-request-frame)
               :encoder (redis-response-frame)
               :tcp-options tcp-options))
-

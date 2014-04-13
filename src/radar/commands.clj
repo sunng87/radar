@@ -5,7 +5,7 @@
 ;; spec for commands
 ;; :rw [:r|:w] read or write
 ;; :supported [true|false] is supported by radar
-;; :key [:one|:zero|:all] how many keys contains in it
+;; :key [:one|:zero|:all] how many keys contained in it
 ;; :pass-proxy [fn] response made by radar
 
 (def redis-commands
@@ -180,4 +180,3 @@
        :key (get-key-spec args cmd-spec)
        :rw (get-rw-spec cmd-spec)
        :pass-proxy (get-pass-proxy-spec cmd-spec)})))
-

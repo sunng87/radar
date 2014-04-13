@@ -1,5 +1,5 @@
 (ns radar.util
-  (:import [org.jboss.netty.buffer ChannelBuffers]))
+  (:import [io.netty.buffer Unpooled]))
 
 (defn as-int [^String s]
   (Integer/valueOf s))
@@ -9,7 +9,7 @@
 (defn to-bytes [^String s]
   (if s (.getBytes s)))
 (defn to-buffer [^String s]
-  (ChannelBuffers/wrappedBuffer ^bytes (to-bytes s)))
+  (Unpooled/wrappedBuffer ^bytes (to-bytes s)))
 
 
 (defmacro dbg [x]
